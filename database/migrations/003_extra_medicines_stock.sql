@@ -1,5 +1,5 @@
 -- Adds 55 medicines + branch stock (run once on existing kiara_medicals DB)
-USE kiara_medicals;
+USE defaultdb;
 
 INSERT IGNORE INTO salts (salt_name) VALUES
 ('Ibuprofen'),

@@ -1,9 +1,5 @@
 -- Kiara Medicals — prototype schema (MySQL 8+)
-CREATE DATABASE IF NOT EXISTS kiara_medicals
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE kiara_medicals;
+USE defaultdb;
 
 CREATE TABLE branches (
   branch_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

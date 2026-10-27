@@ -1,4 +1,4 @@
-USE kiara_medicals;
+USE defaultdb;
 
 INSERT INTO branches (
   branch_code, branch_name, legal_name, address, phone, gstin, invoice_prefix

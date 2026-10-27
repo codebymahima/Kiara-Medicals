@@ -1,4 +1,4 @@
-USE kiara_medicals;
+USE defaultdb;
 
 CREATE TABLE IF NOT EXISTS suppliers (
   supplier_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
