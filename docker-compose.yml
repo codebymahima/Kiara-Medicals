@@ -1,0 +1,18 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: kiara-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Mahima@28
+      MYSQL_DATABASE: kiara_medicals
+    ports:
+      - "3306:3306"
+    volumes:
+      - kiara_mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./database/migrations/002_purchases_returns_analytics.sql:/docker-entrypoint-initdb.d/03-migration.sql:ro
+
+volumes:
+  kiara_mysql_data:
