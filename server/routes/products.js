@@ -29,7 +29,7 @@ router.post("/non-billed", authenticateToken, requireShopUser, async (req, res) 
     } = req.body;
 
     const branchId =
-      req.user.role === "SHOP_USER"
+      ["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(req.user.role)
         ? req.user.branchId
         : requestedBranchId;
 

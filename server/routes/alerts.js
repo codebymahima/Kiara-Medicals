@@ -11,7 +11,7 @@ router.get("/", authenticateToken, async (req, res) => {
   try {
     let branchFilter = null;
 
-    if (req.user.role === "SHOP_USER") {
+    if (["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(req.user.role)) {
       branchFilter = req.user.branchId;
     } else if (req.query.branchId) {
       branchFilter = String(req.query.branchId).trim();

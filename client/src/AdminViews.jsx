@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { DonutChart, BarChart } from "./components/AnalyticsCharts.jsx";
 
 function authHeaders(token) {
   return {
@@ -74,6 +75,50 @@ export function AdminDashboard({ apiUrl, token, onSelectBranchSales }) {
   );
 
   const activeBranches = (overview.branches || []).filter((b) => b.is_active);
+
+  // Chart data: Branch sales share (donut chart)
+  const branchColors = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
+  const branchSalesShareData = (analytics?.byBranch || []).map((b, i) => ({
+    label: b.branchName,
+    value: Math.max(0, Number(b.netTotal || b.grossBilled || 0)),
+    color: branchColors[i % branchColors.length],
+  }));
+
+  const lifetimeSalesShareData = (overview.salesByBranch || []).map((b, i) => ({
+    label: b.branch_name,
+    value: Math.max(0, Number(b.total_sales || 0)),
+    color: branchColors[i % branchColors.length],
+  }));
+
+  // Chart data: Branch comparison grouped bar chart
+  const branchCategories = (analytics?.byBranch || []).map((b) => b.branchName);
+  const branchBarSeries = [
+    {
+      name: "Gross Billed",
+      color: "#10b981",
+      data: (analytics?.byBranch || []).map((b) => Number(b.grossBilled || 0)),
+    },
+    {
+      name: "Stock Purchases",
+      color: "#f59e0b",
+      data: (analytics?.byBranch || []).map((b) => Number(b.stockPurchases || 0)),
+    },
+    {
+      name: "Net Sales",
+      color: "#2563eb",
+      data: (analytics?.byBranch || []).map((b) => Number(b.netTotal || 0)),
+    },
+  ];
+
+  // Chart data: Overall cash flow breakdown
+  const revenueCompositionData = analytics?.overall
+    ? [
+        { label: "Billed Sales", value: Number(analytics.overall.grossBilled || 0), color: "#10b981" },
+        { label: "Stock Purchases", value: Number(analytics.overall.stockPurchases || 0), color: "#f59e0b" },
+        { label: "Unbilled Sales", value: Number(analytics.overall.unbilledTotal || 0), color: "#06b6d4" },
+        { label: "Customer Returns", value: Number(analytics.overall.customerReturns || 0), color: "#ef4444" },
+      ]
+    : [];
 
   return (
     <>
@@ -157,6 +202,34 @@ export function AdminDashboard({ apiUrl, token, onSelectBranchSales }) {
         )}
       </div>
 
+      {/* Visual Analytics Charts & Graphs for Branch Performance */}
+      <div className="charts-grid-2col">
+        <DonutChart
+          title={`Branch Sales Share (${analytics?.label || "Selected Period"})`}
+          data={
+            branchSalesShareData.some((d) => d.value > 0)
+              ? branchSalesShareData
+              : lifetimeSalesShareData
+          }
+          centerLabel="Branch Sales"
+        />
+        <DonutChart
+          title={`Revenue Breakdown (${analytics?.label || "Selected Period"})`}
+          data={revenueCompositionData}
+          centerLabel="Total Flow"
+        />
+      </div>
+
+      {branchCategories.length > 0 && (
+        <div style={{ marginBottom: "20px" }}>
+          <BarChart
+            title={`Branch Performance Comparison (${analytics?.label || "Selected Period"})`}
+            categories={branchCategories}
+            series={branchBarSeries}
+          />
+        </div>
+      )}
+
       {analytics?.byBranch?.length > 0 && (
         <div className="table-card">
           <h3>Branch-wise — {analytics.label}</h3>
@@ -236,33 +309,31 @@ export function AdminBranchSales({ apiUrl, token, branch, onBack }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+
+  const loadSales = useCallback(async (searchTerm = "") => {
+    if (!branch?.id) return;
+    setLoading(true);
+    setError("");
+    try {
+      const q = searchTerm.trim() ? `&search=${encodeURIComponent(searchTerm.trim())}` : "";
+      const res = await fetch(
+        `${apiUrl}/api/admin/sales?branchId=${branch.id}${q}`,
+        { headers: authHeaders(token) }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to load sales.");
+      setSales(data.sales || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiUrl, token, branch?.id]);
 
   useEffect(() => {
-    if (!branch?.id) return;
-    let cancelled = false;
-
-    (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const res = await fetch(
-          `${apiUrl}/api/admin/sales?branchId=${branch.id}`,
-          { headers: authHeaders(token) }
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || "Failed to load sales.");
-        if (!cancelled) setSales(data.sales || []);
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiUrl, token, branch?.id]);
+    loadSales(search);
+  }, [loadSales, search]);
 
   return (
     <div className="billing-page">
@@ -286,24 +357,42 @@ export function AdminBranchSales({ apiUrl, token, branch, onBack }) {
       )}
 
       <div className="table-card">
-        <div className="table-toolbar">
+        <div className="table-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
           <div>
-            <h3>Sales (read-only)</h3>
-            <p>{sales.length} recent record(s)</p>
+            <h3>Invoices & Sales (by Patient Name / Invoice)</h3>
+            <p>{sales.length} record(s) found</p>
+          </div>
+          <div style={{ minWidth: "280px" }}>
+            <input
+              type="search"
+              placeholder="Search by patient name, mobile, invoice…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                border: "1px solid #cbd5e1",
+                borderRadius: "8px",
+                fontSize: "14px",
+              }}
+            />
           </div>
         </div>
 
         {loading ? (
           <p className="empty-state">Loading sales…</p>
         ) : sales.length === 0 ? (
-          <p className="empty-state">No finalized sales for this branch yet.</p>
+          <p className="empty-state">
+            {search ? `No sales match "${search}".` : "No finalized sales for this branch yet."}
+          </p>
         ) : (
           <div className="table-scroll">
             <table className="products-table">
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Invoice</th>
+                  <th>Patient Name</th>
+                  <th>Invoice #</th>
                   <th>Type</th>
                   <th>Payment</th>
                   <th>Amount</th>
@@ -314,10 +403,18 @@ export function AdminBranchSales({ apiUrl, token, branch, onBack }) {
                   <tr key={sale.sale_id}>
                     <td>
                       {sale.sale_datetime
-                        ? String(sale.sale_datetime).slice(0, 19)
+                        ? String(sale.sale_datetime).slice(0, 16)
                         : "—"}
                     </td>
-                    <td>{sale.invoice_number || "—"}</td>
+                    <td>
+                      <strong>{sale.patientName || sale.patient_name || "Walk-in Patient"}</strong>
+                      {(sale.patientMobile || sale.patient_mobile) && (
+                        <div style={{ fontSize: "12px", color: "#64748b" }}>
+                          {sale.patientMobile || sale.patient_mobile}
+                        </div>
+                      )}
+                    </td>
+                    <td>{sale.invoice_number || `#${sale.sale_id}`}</td>
                     <td>{sale.sale_type}</td>
                     <td>{sale.payment_method}</td>
                     <td>₹{Number(sale.grand_total).toFixed(2)}</td>
@@ -568,6 +665,15 @@ export function AdminBranches({ apiUrl, token, onBranchesChanged }) {
     invoicePrefix: "KM",
   });
 
+  const [editingBranch, setEditingBranch] = useState(null);
+  const [editForm, setEditForm] = useState({
+    branchName: "",
+    legalName: "",
+    phone: "",
+    address: "",
+    invoicePrefix: "",
+  });
+
   const load = useCallback(async () => {
     setError("");
     const res = await fetch(`${apiUrl}/api/admin/branches`, {
@@ -582,6 +688,41 @@ export function AdminBranches({ apiUrl, token, onBranchesChanged }) {
   useEffect(() => {
     load().catch((err) => setError(err.message));
   }, [load]);
+
+  function startEdit(branch) {
+    setEditingBranch(branch);
+    setEditForm({
+      branchName: branch.branch_name || "",
+      legalName: branch.legal_name || "",
+      phone: branch.phone || "",
+      address: branch.address || "",
+      invoicePrefix: branch.invoice_prefix || "KM",
+    });
+  }
+
+  async function handleUpdateBranch(e) {
+    e.preventDefault();
+    if (!editingBranch) return;
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch(
+        `${apiUrl}/api/admin/branches/${editingBranch.branch_id}`,
+        {
+          method: "PATCH",
+          headers: authHeaders(token),
+          body: JSON.stringify(editForm),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Could not update branch.");
+      setMessage("Branch details updated successfully.");
+      setEditingBranch(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -664,10 +805,25 @@ export function AdminBranches({ apiUrl, token, onBranchesChanged }) {
             {branches.map((b) => (
               <tr key={b.branch_id}>
                 <td>{b.branch_code}</td>
-                <td>{b.branch_name}</td>
+                <td>
+                  <strong>{b.branch_name}</strong>
+                  {b.legal_name && (
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                      {b.legal_name}
+                    </div>
+                  )}
+                </td>
                 <td>{b.gstin}</td>
                 <td>{b.is_active ? "Active" : "Inactive"}</td>
-                <td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ marginRight: "8px" }}
+                    onClick={() => startEdit(b)}
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     className="secondary-button"
@@ -681,6 +837,86 @@ export function AdminBranches({ apiUrl, token, onBranchesChanged }) {
           </tbody>
         </table>
       </div>
+
+      {editingBranch && (
+        <div className="billing-card" style={{ border: "2px solid #3b82f6", background: "#f8fafc" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <h3 style={{ margin: 0 }}>Edit Branch: {editingBranch.branch_code}</h3>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setEditingBranch(null)}
+            >
+              Cancel
+            </button>
+          </div>
+          <form className="billing-grid" onSubmit={handleUpdateBranch}>
+            <label>
+              Display Name *
+              <input
+                required
+                value={editForm.branchName}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, branchName: e.target.value })
+                }
+                placeholder="Kiara Medicals A"
+              />
+            </label>
+            <label>
+              Legal Name
+              <input
+                value={editForm.legalName}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, legalName: e.target.value })
+                }
+                placeholder="Kiara Medicals A Pvt Ltd"
+              />
+            </label>
+            <label>
+              Invoice Prefix
+              <input
+                value={editForm.invoicePrefix}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, invoicePrefix: e.target.value.toUpperCase() })
+                }
+                placeholder="KM-A"
+              />
+            </label>
+            <label>
+              Phone
+              <input
+                value={editForm.phone}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, phone: e.target.value })
+                }
+                placeholder="08025551234"
+              />
+            </label>
+            <label style={{ gridColumn: "1 / -1" }}>
+              Address
+              <input
+                value={editForm.address}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, address: e.target.value })
+                }
+                placeholder="Full address"
+              />
+            </label>
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: "10px", marginTop: "10px" }}>
+              <button type="submit" className="primary-button">
+                Save Branch Changes
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setEditingBranch(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div className="billing-card">
         <h3>Add branch</h3>
@@ -790,7 +1026,7 @@ export function AdminUsers({ apiUrl, token, branches }) {
         fullName: form.fullName,
         role: form.role,
         branchId:
-          form.role === "SHOP_USER" ? Number(form.branchId) : null,
+          form.role !== "ADMIN" ? Number(form.branchId) : null,
       };
       const res = await fetch(`${apiUrl}/api/admin/users`, {
         method: "POST",
@@ -844,15 +1080,36 @@ export function AdminUsers({ apiUrl, token, branches }) {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.user_id}>
-                <td>{u.full_name}</td>
-                <td>{u.username}</td>
-                <td>{u.role}</td>
-                <td>{u.branch_name || "—"}</td>
-                <td>{u.is_active ? "Yes" : "No"}</td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const roleLabel =
+                u.role === "ADMIN"
+                  ? "Admin"
+                  : u.role === "SHOP_MANAGER"
+                  ? "Shop Manager"
+                  : u.role === "SHOP_WORKER"
+                  ? "Shop Worker"
+                  : "Shop User";
+              const roleBadgeClass =
+                u.role === "ADMIN"
+                  ? "role-badge"
+                  : u.role === "SHOP_MANAGER"
+                  ? "status-badge status-warning"
+                  : "status-badge";
+
+              return (
+                <tr key={u.user_id}>
+                  <td><strong>{u.full_name}</strong></td>
+                  <td><code>{u.username}</code></td>
+                  <td>
+                    <span className={roleBadgeClass} style={{ fontSize: "11px", padding: "3px 8px" }}>
+                      {roleLabel}
+                    </span>
+                  </td>
+                  <td>{u.branch_name || "—"}</td>
+                  <td>{u.is_active ? "Yes" : "No"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -900,11 +1157,13 @@ export function AdminUsers({ apiUrl, token, branches }) {
                 setForm({ ...form, role: e.target.value })
               }
             >
-              <option value="SHOP_USER">Shop user</option>
-              <option value="ADMIN">Admin</option>
+              <option value="SHOP_MANAGER">Shop Manager (Full Operations)</option>
+              <option value="SHOP_WORKER">Shop Worker (Billing & Customer Returns)</option>
+              <option value="SHOP_USER">Shop User (Standard)</option>
+              <option value="ADMIN">Admin (All Branches)</option>
             </select>
           </label>
-          {form.role === "SHOP_USER" && (
+          {form.role !== "ADMIN" && (
             <label>
               Branch *
               <select

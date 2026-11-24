@@ -172,7 +172,14 @@ router.post("/branches", async (req, res) => {
 router.patch("/branches/:branchId", async (req, res) => {
   try {
     const branchId = Number(req.params.branchId);
-    const { isActive } = req.body || {};
+    const {
+      isActive,
+      branchName,
+      legalName,
+      address,
+      phone,
+      invoicePrefix,
+    } = req.body || {};
 
     if (!Number.isSafeInteger(branchId) || branchId <= 0) {
       return res.status(400).json({
@@ -181,16 +188,50 @@ router.patch("/branches/:branchId", async (req, res) => {
       });
     }
 
-    if (typeof isActive !== "boolean") {
+    const updates = [];
+    const params = [];
+
+    if (typeof isActive === "boolean") {
+      updates.push("is_active = ?");
+      params.push(isActive);
+    }
+
+    if (typeof branchName === "string" && branchName.trim()) {
+      updates.push("branch_name = ?");
+      params.push(branchName.trim());
+    }
+
+    if (typeof legalName === "string" && legalName.trim()) {
+      updates.push("legal_name = ?");
+      params.push(legalName.trim());
+    }
+
+    if (typeof address === "string") {
+      updates.push("address = ?");
+      params.push(address.trim());
+    }
+
+    if (typeof phone === "string") {
+      updates.push("phone = ?");
+      params.push(phone.trim());
+    }
+
+    if (typeof invoicePrefix === "string" && invoicePrefix.trim()) {
+      updates.push("invoice_prefix = ?");
+      params.push(invoicePrefix.trim().toUpperCase());
+    }
+
+    if (updates.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "isActive (boolean) is required.",
+        message: "No valid fields provided to update.",
       });
     }
 
+    params.push(branchId);
     const [result] = await pool.execute(
-      `UPDATE branches SET is_active = ? WHERE branch_id = ?`,
-      [isActive, branchId]
+      `UPDATE branches SET ${updates.join(", ")} WHERE branch_id = ?`,
+      params
     );
 
     if (result.affectedRows === 0) {
@@ -202,7 +243,7 @@ router.patch("/branches/:branchId", async (req, res) => {
 
     res.json({
       success: true,
-      message: isActive ? "Branch activated." : "Branch deactivated.",
+      message: "Branch updated successfully.",
     });
   } catch (error) {
     console.error("Update branch error:", error.message);
@@ -251,6 +292,9 @@ router.post("/users", async (req, res) => {
       branchId = null,
     } = req.body || {};
 
+    const allowedRoles = ["ADMIN", "SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"];
+    const isShopRole = ["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(role);
+
     if (
       typeof username !== "string" ||
       !username.trim() ||
@@ -258,20 +302,20 @@ router.post("/users", async (req, res) => {
       password.length < 8 ||
       typeof fullName !== "string" ||
       !fullName.trim() ||
-      !["ADMIN", "SHOP_USER"].includes(role)
+      !allowedRoles.includes(role)
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "username, fullName, password (min 8 chars), and role (ADMIN or SHOP_USER) are required.",
+          "username, fullName, password (min 8 chars), and role (ADMIN, SHOP_MANAGER, SHOP_WORKER, or SHOP_USER) are required.",
       });
     }
 
-    if (role === "SHOP_USER") {
+    if (isShopRole) {
       if (!Number.isSafeInteger(Number(branchId)) || Number(branchId) <= 0) {
         return res.status(400).json({
           success: false,
-          message: "Shop users must be assigned to an active branch.",
+          message: "Shop staff (Managers, Workers, Users) must be assigned to an active branch.",
         });
       }
 
@@ -312,7 +356,7 @@ router.post("/users", async (req, res) => {
          (branch_id, full_name, username, password_hash, role, is_active)
        VALUES (?, ?, ?, ?, ?, TRUE)`,
       [
-        role === "SHOP_USER" ? Number(branchId) : null,
+        isShopRole ? Number(branchId) : null,
         fullName.trim(),
         username.trim(),
         passwordHash,
@@ -339,6 +383,8 @@ router.get("/sales", async (req, res) => {
     const branchId = req.query.branchId
       ? Number(req.query.branchId)
       : null;
+    const search =
+      typeof req.query.search === "string" ? req.query.search.trim() : "";
 
     if (
       branchId != null &&
@@ -360,9 +406,15 @@ router.get("/sales", async (req, res) => {
         s.payment_method,
         s.grand_total,
         s.sale_datetime,
-        s.status
+        s.status,
+        s.notes,
+        p.full_name AS patient_full_name,
+        p.mobile AS patient_mobile_db
       FROM sales s
       JOIN branches b ON b.branch_id = s.branch_id
+      LEFT JOIN patients p
+        ON p.patient_id = s.patient_id
+       AND p.branch_id = s.branch_id
       WHERE s.status = 'FINALIZED'
     `;
     const params = [];
@@ -372,11 +424,45 @@ router.get("/sales", async (req, res) => {
       params.push(branchId);
     }
 
+    if (search.length >= 1) {
+      sql += ` AND (
+        COALESCE(s.notes, '') LIKE ?
+        OR COALESCE(s.invoice_number, '') LIKE ?
+        OR CAST(s.sale_id AS CHAR) LIKE ?
+        OR COALESCE(p.full_name, '') LIKE ?
+        OR COALESCE(p.mobile, '') LIKE ?
+      )`;
+      const term = `%${search}%`;
+      params.push(term, term, term, term, term);
+    }
+
     sql += " ORDER BY s.sale_datetime DESC LIMIT 100";
 
     const [sales] = await pool.query(sql, params);
 
-    res.json({ success: true, sales });
+    const enriched = sales.map((row) => {
+      const notes = row.notes || "";
+      const nameMatch = notes.match(/Patient:\s*([^|]+)/i);
+      const mobileMatch = notes.match(/Mobile:\s*([^|]+)/i);
+      const mobileFromNotes =
+        mobileMatch && mobileMatch[1].trim() !== "N/A"
+          ? mobileMatch[1].trim()
+          : null;
+
+      const patientName =
+        row.patient_full_name ||
+        (nameMatch ? nameMatch[1].trim() : "Walk-in Patient");
+
+      return {
+        ...row,
+        patient_name: patientName,
+        patientName: patientName,
+        patient_mobile: row.patient_mobile_db || mobileFromNotes,
+        patientMobile: row.patient_mobile_db || mobileFromNotes,
+      };
+    });
+
+    res.json({ success: true, sales: enriched });
   } catch (error) {
     console.error("Admin sales error:", error.message);
     res.status(500).json({

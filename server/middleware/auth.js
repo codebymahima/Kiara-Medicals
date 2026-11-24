@@ -52,7 +52,9 @@ async function authenticateToken(req, res, next) {
       });
     }
 
-    if (user.role === "SHOP_USER") {
+    const isShopRole = ["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(user.role);
+
+    if (isShopRole) {
       if (
         user.branch_id == null ||
         !user.branch_name ||
@@ -133,7 +135,7 @@ function authorizeBranch(req, res, next) {
   }
 
   if (
-    req.user.role === "SHOP_USER" &&
+    ["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(req.user.role) &&
     requestedBranchId === req.user.branchId
   ) {
     return next();

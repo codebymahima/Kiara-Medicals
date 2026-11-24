@@ -74,7 +74,8 @@ router.post("/login", async (req, res) => {
     }
 
     // 5. Enforce role and branch rules
-    if (user.role === "SHOP_USER") {
+    const isShopRole = ["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(user.role);
+    if (isShopRole) {
       if (
         user.branch_id == null ||
         !user.branch_name ||

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MedicineSearchRow } from "./MedicineSearchRow.jsx";
+import { DonutChart, BarChart } from "./components/AnalyticsCharts.jsx";
+import { numberToWordsIndian } from "./utils/numberToWords.js";
 
 function headers(token) {
   return {
@@ -80,6 +82,7 @@ function useBranchAnalytics(apiUrl, token) {
 export function ShopDashboard({ apiUrl, token, branchName, userName }) {
   const { analytics, error } = useBranchAnalytics(apiUrl, token);
   const [alertCounts, setAlertCounts] = useState({ low: 0, expiry: 0 });
+  const [chartPeriod, setChartPeriod] = useState("month");
 
   useEffect(() => {
     (async () => {
@@ -101,6 +104,47 @@ export function ShopDashboard({ apiUrl, token, branchName, userName }) {
   }, [apiUrl, token]);
 
   const month = analytics?.month;
+  const currentMetric = analytics?.[chartPeriod];
+
+  const donutData = currentMetric
+    ? [
+        { label: "Billed Sales", value: Number(currentMetric.grossBilled || 0), color: "#10b981" },
+        { label: "Stock Purchases", value: Number(currentMetric.stockPurchases || 0), color: "#f59e0b" },
+        { label: "Unbilled Sales", value: Number(currentMetric.unbilledTotal || 0), color: "#06b6d4" },
+        { label: "Customer Returns", value: Number(currentMetric.customerReturns || 0), color: "#ef4444" },
+      ]
+    : [];
+
+  const periodBarCategories = ["Today", "This Week", "This Month"];
+  const periodBarSeries = [
+    {
+      name: "Gross Billed",
+      color: "#10b981",
+      data: [
+        Number(analytics?.day?.grossBilled || 0),
+        Number(analytics?.week?.grossBilled || 0),
+        Number(analytics?.month?.grossBilled || 0),
+      ],
+    },
+    {
+      name: "Stock Purchases",
+      color: "#f59e0b",
+      data: [
+        Number(analytics?.day?.stockPurchases || 0),
+        Number(analytics?.week?.stockPurchases || 0),
+        Number(analytics?.month?.stockPurchases || 0),
+      ],
+    },
+    {
+      name: "Net Sales",
+      color: "#2563eb",
+      data: [
+        Number(analytics?.day?.netTotal || 0),
+        Number(analytics?.week?.netTotal || 0),
+        Number(analytics?.month?.netTotal || 0),
+      ],
+    },
+  ];
 
   return (
     <>
@@ -143,6 +187,44 @@ export function ShopDashboard({ apiUrl, token, branchName, userName }) {
 
       {!analytics && !error && <p className="empty-state">Loading metrics…</p>}
 
+      {analytics && (
+        <>
+          <div className="billing-card" style={{ padding: "16px 20px", marginBottom: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ fontWeight: 600, fontSize: "14px", color: "#334155" }}>
+                Select Period for Revenue Breakdown Chart:
+              </div>
+              <div className="period-toggle" style={{ margin: 0 }}>
+                {["day", "week", "month"].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={chartPeriod === p ? "primary-button" : "secondary-button"}
+                    onClick={() => setChartPeriod(p)}
+                    style={{ minHeight: "34px", padding: "6px 14px", fontSize: "13px" }}
+                  >
+                    {p === "day" ? "Today" : p === "week" ? "This Week" : "This Month"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="charts-grid-2col">
+            <DonutChart
+              title={`Cash Flow Breakdown (${currentMetric?.label || "Selected"})`}
+              data={donutData}
+              centerLabel="Net Total"
+            />
+            <BarChart
+              title="Sales & Purchases Comparison (Day / Week / Month)"
+              categories={periodBarCategories}
+              series={periodBarSeries}
+            />
+          </div>
+        </>
+      )}
+
       <div className="dashboard-section-head">
         <h3>Sales & purchases by period</h3>
         <p>Includes monthly stock purchase totals from purchase entries.</p>
@@ -165,6 +247,49 @@ export function ShopDashboard({ apiUrl, token, branchName, userName }) {
 
 export function ShopAnalytics({ apiUrl, token }) {
   const { analytics, error } = useBranchAnalytics(apiUrl, token);
+  const [chartPeriod, setChartPeriod] = useState("month");
+
+  const currentMetric = analytics?.[chartPeriod];
+
+  const donutData = currentMetric
+    ? [
+        { label: "Billed Sales", value: Number(currentMetric.grossBilled || 0), color: "#10b981" },
+        { label: "Stock Purchases", value: Number(currentMetric.stockPurchases || 0), color: "#f59e0b" },
+        { label: "Unbilled Sales", value: Number(currentMetric.unbilledTotal || 0), color: "#06b6d4" },
+        { label: "Customer Returns", value: Number(currentMetric.customerReturns || 0), color: "#ef4444" },
+      ]
+    : [];
+
+  const periodBarCategories = ["Today", "This Week", "This Month"];
+  const periodBarSeries = [
+    {
+      name: "Gross Billed",
+      color: "#10b981",
+      data: [
+        Number(analytics?.day?.grossBilled || 0),
+        Number(analytics?.week?.grossBilled || 0),
+        Number(analytics?.month?.grossBilled || 0),
+      ],
+    },
+    {
+      name: "Stock Purchases",
+      color: "#f59e0b",
+      data: [
+        Number(analytics?.day?.stockPurchases || 0),
+        Number(analytics?.week?.stockPurchases || 0),
+        Number(analytics?.month?.stockPurchases || 0),
+      ],
+    },
+    {
+      name: "Net Sales",
+      color: "#2563eb",
+      data: [
+        Number(analytics?.day?.netTotal || 0),
+        Number(analytics?.week?.netTotal || 0),
+        Number(analytics?.month?.netTotal || 0),
+      ],
+    },
+  ];
 
   return (
     <>
@@ -177,6 +302,45 @@ export function ShopAnalytics({ apiUrl, token }) {
       </div>
       {error && <div className="error-message">{error}</div>}
       {!analytics && !error && <p className="empty-state">Loading…</p>}
+
+      {analytics && (
+        <>
+          <div className="billing-card" style={{ padding: "16px 20px", marginBottom: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ fontWeight: 600, fontSize: "14px", color: "#334155" }}>
+                Select Period for Revenue Breakdown Chart:
+              </div>
+              <div className="period-toggle" style={{ margin: 0 }}>
+                {["day", "week", "month"].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={chartPeriod === p ? "primary-button" : "secondary-button"}
+                    onClick={() => setChartPeriod(p)}
+                    style={{ minHeight: "34px", padding: "6px 14px", fontSize: "13px" }}
+                  >
+                    {p === "day" ? "Today" : p === "week" ? "This Week" : "This Month"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="charts-grid-2col">
+            <DonutChart
+              title={`Cash Flow Breakdown (${currentMetric?.label || "Selected"})`}
+              data={donutData}
+              centerLabel="Net Total"
+            />
+            <BarChart
+              title="Sales & Purchases Comparison (Day / Week / Month)"
+              categories={periodBarCategories}
+              series={periodBarSeries}
+            />
+          </div>
+        </>
+      )}
+
       <div className="dashboard-grid dashboard-grid-metrics">
         <MetricGrid title={analytics?.day?.label || "Today"} data={analytics?.day} />
         <MetricGrid title={analytics?.week?.label || "This week"} data={analytics?.week} />
@@ -1034,6 +1198,7 @@ export function PastBills({ apiUrl, token }) {
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [showInvoiceSheet, setShowInvoiceSheet] = useState(false);
 
   const loadHistory = useCallback(
     async (term) => {
@@ -1160,10 +1325,10 @@ export function PastBills({ apiUrl, token }) {
             <table className="products-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Invoice</th>
-                  <th>Patient</th>
+                  <th>Patient Name</th>
                   <th>Mobile</th>
+                  <th>Invoice #</th>
+                  <th>Date</th>
                   <th>Total</th>
                   <th></th>
                 </tr>
@@ -1176,11 +1341,17 @@ export function PastBills({ apiUrl, token }) {
                       selectedId === row.sale_id ? "past-bill-row-active" : ""
                     }
                   >
+                    <td>
+                      <strong>{row.patientName || row.patient_name || "Walk-in Patient"}</strong>
+                    </td>
+                    <td>{row.patientMobile || row.patient_mobile || "—"}</td>
+                    <td>
+                      <code>{row.invoice_number || `#${row.sale_id}`}</code>
+                    </td>
                     <td>{String(row.sale_datetime).slice(0, 16)}</td>
-                    <td>{row.invoice_number || `#${row.sale_id}`}</td>
-                    <td>{row.patientName || "—"}</td>
-                    <td>{row.patientMobile || "—"}</td>
-                    <td>₹{Number(row.grand_total).toFixed(2)}</td>
+                    <td>
+                      <strong>₹{Number(row.grand_total).toFixed(2)}</strong>
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -1200,7 +1371,28 @@ export function PastBills({ apiUrl, token }) {
 
       {selectedId && (
         <div className="billing-card">
-          <h3>Bill detail</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+            <h3 style={{ margin: 0 }}>Bill detail</h3>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setShowInvoiceSheet((v) => !v)}
+              >
+                {showInvoiceSheet ? "Hide GST Invoice" : "🖨️ View / Print GST Invoice"}
+              </button>
+              {showInvoiceSheet && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => window.print()}
+                >
+                  Print
+                </button>
+              )}
+            </div>
+          </div>
+
           {detailLoading && <p className="billing-search-hint">Loading…</p>}
           {detail?.sale && (
             <>
@@ -1212,31 +1404,213 @@ export function PastBills({ apiUrl, token }) {
               {detail.sale.notes && (
                 <p className="past-bill-notes">{detail.sale.notes}</p>
               )}
-              <div className="table-scroll">
-                <table className="products-table">
-                  <thead>
-                    <tr>
-                      <th>Medicine</th>
-                      <th>Batch</th>
-                      <th>Qty</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(detail.items || []).map((line) => (
-                      <tr key={line.sale_item_id}>
-                        <td>{line.product_name_snapshot}</td>
-                        <td>{line.batch_number_snapshot}</td>
-                        <td>{line.quantity}</td>
-                        <td>₹{Number(line.line_total).toFixed(2)}</td>
+
+              {showInvoiceSheet ? (
+                (() => {
+                  const notes = detail.sale.notes || "";
+                  const patMatch = notes.match(/Patient:\s*([^|]+)/i);
+                  const docMatch = notes.match(/Doctor:\s*([^|]+)/i);
+                  const addrMatch = notes.match(/Address:\s*([^|]+)/i);
+                  const drRegMatch = notes.match(/Dr\s*Reg\s*No:\s*([^|]+)/i);
+
+                  const patientName = patMatch ? patMatch[1].trim() : "MR SITARAM JI";
+                  const doctorName = docMatch ? docMatch[1].trim() : "DR ANIL TAMBI JI";
+                  const patientAddress = addrMatch && addrMatch[1].trim() !== "N/A" ? addrMatch[1].trim() : "";
+                  const doctorRegNo = drRegMatch && drRegMatch[1].trim() !== "N/A" ? drRegMatch[1].trim() : "";
+
+                  const grandTotal = Number(detail.sale.grand_total || 0);
+                  const subTotal = Number(detail.sale.subtotal || grandTotal);
+                  const discountTotal = Number(detail.sale.discount_total || 0);
+                  const taxableVal = grandTotal / 1.05;
+                  const sgstVal = taxableVal * 0.025;
+                  const cgstVal = taxableVal * 0.025;
+                  const words = numberToWordsIndian(grandTotal).replace(/Rupees Only/i, "").trim();
+
+                  const formatExp = (expStr) => {
+                    if (!expStr) return "—";
+                    const p = String(expStr).trim().split("-");
+                    return p.length >= 2 ? `${p[1]}/${p[0].slice(-2)}` : expStr;
+                  };
+
+                  const formatDt = (dtStr) => {
+                    const d = dtStr ? new Date(dtStr) : new Date();
+                    return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+                  };
+
+                  return (
+                    <div className="tax-invoice-sheet" style={{ marginTop: "16px" }}>
+                      <header className="gst-photo-header">
+                        <h1 className="gst-photo-title">KIARA MEDICAL AND PROVISION STORE</h1>
+                        <p className="gst-photo-sub">290/207, RAJPUT COLONY,</p>
+                        <p className="gst-photo-sub">NEAR INCOME TAX COLONY,</p>
+                        <p className="gst-photo-sub">Phone : 9528120548, 7014271864</p>
+                        <p className="gst-photo-sub">E-Mail : sanjaygupta85@gmail.com</p>
+                        <p className="gst-photo-sub">GSTIN : 08ABCFK5291Q1ZM</p>
+                        <p className="gst-photo-sub">D.L.No : DRUG/2024-25/117477-117478</p>
+                      </header>
+
+                      <div className="gst-photo-banner">GST INVOICE</div>
+
+                      <div className="gst-photo-meta-section">
+                        <div className="gst-meta-top-row">
+                          <div className="gst-meta-patient-block">
+                            <div className="gst-meta-line">
+                              <span className="gst-field-label">Patient Name :</span>
+                              <strong className="gst-field-value">{patientName.toUpperCase()}</strong>
+                            </div>
+                            <div className="gst-meta-line">
+                              <span className="gst-field-label">Patient Address :</span>
+                              <span className="gst-field-value">{patientAddress}</span>
+                            </div>
+                            <div className="gst-meta-line">
+                              <span className="gst-field-label">Dr Name :</span>
+                              <span className="gst-field-value">
+                                {doctorName.toUpperCase().startsWith("DR")
+                                  ? doctorName.toUpperCase()
+                                  : `DR ${doctorName.toUpperCase()}`}
+                              </span>
+                            </div>
+                            <div className="gst-meta-line">
+                              <span className="gst-field-label">Dr Reg No. :</span>
+                              <span className="gst-field-value">{doctorRegNo}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="gst-meta-bar">
+                          <div className="gst-meta-bar-item">
+                            <span className="gst-field-label">Invoice No. :</span>
+                            <strong className="gst-field-value">{detail.sale.invoice_number || `KM-${detail.sale.sale_id}`}</strong>
+                          </div>
+                          <div className="gst-meta-bar-item">
+                            <span className="gst-field-label">Date:</span>
+                            <span className="gst-field-value">{formatDt(detail.sale.sale_datetime)}</span>
+                          </div>
+                          <div className="gst-meta-bar-item">
+                            <span className="gst-field-label">Mode:</span>
+                            <span className="gst-field-value">{detail.sale.payment_method || "CASH"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="gst-invoice-table-wrapper">
+                        <table className="gst-photo-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: "28px" }}>SN.</th>
+                              <th>PRODUCT NAME</th>
+                              <th>PACK</th>
+                              <th>DISC</th>
+                              <th>HSN</th>
+                              <th>BATCH</th>
+                              <th>EXP</th>
+                              <th>QTY</th>
+                              <th>MRP</th>
+                              <th>SGST</th>
+                              <th>CGST</th>
+                              <th>AMOUNT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detail.items || []).map((line, idx) => (
+                              <tr key={line.sale_item_id || idx}>
+                                <td className="center-cell">{idx + 1}</td>
+                                <td className="product-name-cell">
+                                  <strong>{line.product_name_snapshot}</strong>
+                                </td>
+                                <td className="center-cell">1*10</td>
+                                <td className="center-cell">
+                                  {Number(line.discount_amount || 0) > 0 ? `₹${Number(line.discount_amount).toFixed(0)}` : "0%"}
+                                </td>
+                                <td className="center-cell">{line.hsn_code || "3004"}</td>
+                                <td className="center-cell">{line.batch_number_snapshot || "—"}</td>
+                                <td className="center-cell">{formatExp(line.expiry_date_snapshot)}</td>
+                                <td className="center-cell">{line.quantity}</td>
+                                <td className="right-cell">{Number(line.mrp || line.unit_selling_price || 0).toFixed(2)}</td>
+                                <td className="right-cell">2.50</td>
+                                <td className="right-cell">2.50</td>
+                                <td className="right-cell amount-cell">{Number(line.line_total).toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="gst-formula-banner">
+                        GST {taxableVal.toFixed(2)}*2.5%+2.5%={sgstVal.toFixed(2)}SGST+{cgstVal.toFixed(2)}CGST, ** GET WELL SOON **
+                      </div>
+
+                      <div className="gst-bottom-split">
+                        <div className="gst-bottom-terms">
+                          <p className="gst-terms-title">Terms &amp; Conditions</p>
+                          <p>Consult your Doctor before use.</p>
+                          <p>All disputes subject to Jaipur Jurisdiction only.</p>
+                          <p>Prescribed Sales Tax declaration will be given.</p>
+                          <p className="gst-remark-line">Remark:</p>
+
+                          <div className="gst-signatory-wrap">
+                            <p className="gst-for-store">For KIARA MEDICAL AND PROVISION STORE</p>
+                            <div className="gst-sig-spacer" />
+                            <p className="gst-authorised">Authorised Signatory</p>
+                          </div>
+                        </div>
+
+                        <div className="gst-bottom-totals">
+                          <table className="gst-totals-table">
+                            <tbody>
+                              <tr>
+                                <td className="gst-tot-label">SUB TOTAL</td>
+                                <td className="gst-tot-val">{subTotal.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td className="gst-tot-label">DISCOUNT</td>
+                                <td className="gst-tot-val">{discountTotal.toFixed(2)}</td>
+                              </tr>
+                              <tr className="gst-grand-row">
+                                <td className="gst-tot-label"><strong>GRAND TOTAL</strong></td>
+                                <td className="gst-tot-val"><strong>{grandTotal.toFixed(2)}</strong></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="gst-words-line">
+                        Rs. {words} only
+                      </div>
+
+                      <div className="gst-footer-tagline">
+                        Get well soon. Scan the Healthcare QR Code for complete health services, insurance, and government benefits.
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="table-scroll">
+                  <table className="products-table">
+                    <thead>
+                      <tr>
+                        <th>Medicine</th>
+                        <th>Batch</th>
+                        <th>Qty</th>
+                        <th>Amount</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="invoice-total">
-                Grand total: ₹{Number(detail.sale.grand_total).toFixed(2)}
-              </p>
+                    </thead>
+                    <tbody>
+                      {(detail.items || []).map((line) => (
+                        <tr key={line.sale_item_id}>
+                          <td>{line.product_name_snapshot}</td>
+                          <td>{line.batch_number_snapshot}</td>
+                          <td>{line.quantity}</td>
+                          <td>₹{Number(line.line_total).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="invoice-total">
+                    Grand total: ₹{Number(detail.sale.grand_total).toFixed(2)}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1254,16 +1628,20 @@ export function CustomerReturn({ apiUrl, token }) {
   const [message, setMessage] = useState("");
   const [processing, setProcessing] = useState(false);
   const [successPopup, setSuccessPopup] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const loadRecentBills = useCallback(async (query = "") => {
+    const q = query.trim() ? `?search=${encodeURIComponent(query.trim())}` : "";
+    const res = await fetch(`${apiUrl}/api/billing/recent${q}`, {
+      headers: headers(token),
+    });
+    const data = await res.json();
+    if (res.ok) setBills(data.sales || []);
+  }, [apiUrl, token]);
 
   useEffect(() => {
-    (async () => {
-      const res = await fetch(`${apiUrl}/api/billing/recent`, {
-        headers: headers(token),
-      });
-      const data = await res.json();
-      if (res.ok) setBills(data.sales || []);
-    })();
-  }, [apiUrl, token]);
+    loadRecentBills(searchTerm);
+  }, [loadRecentBills, searchTerm]);
 
   async function loadBill(saleId) {
     setSelectedId(saleId);
@@ -1382,20 +1760,34 @@ export function CustomerReturn({ apiUrl, token }) {
         </div>
       )}
 
-      <label>
-        Recent bills
-        <select
-          value={selectedId}
-          onChange={(e) => loadBill(e.target.value)}
-        >
-          <option value="">Select invoice</option>
-          {bills.map((b) => (
-            <option key={b.sale_id} value={b.sale_id}>
-              {b.invoice_number} — ₹{Number(b.grand_total).toFixed(2)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="billing-card" style={{ marginBottom: "16px" }}>
+        <h3 style={{ margin: "0 0 12px 0" }}>Select Bill by Patient Name or Invoice #</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", alignItems: "end" }}>
+          <label style={{ margin: 0 }}>
+            Search by Patient Name / Invoice
+            <input
+              type="search"
+              placeholder="Type patient name, mobile, or KM-..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </label>
+          <label style={{ margin: 0 }}>
+            Matched Bills ({bills.length})
+            <select
+              value={selectedId}
+              onChange={(e) => loadBill(e.target.value)}
+            >
+              <option value="">Select bill to process return</option>
+              {bills.map((b) => (
+                <option key={b.sale_id} value={b.sale_id}>
+                  {b.patient_name || b.patientName || "Walk-in"} · {b.invoice_number || `#${b.sale_id}`} — ₹{Number(b.grand_total).toFixed(2)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
       {bill?.items && (
         <form className="billing-card" onSubmit={submitReturn}>
           <table className="products-table">
@@ -1818,22 +2210,24 @@ export function EditBill({ apiUrl, token, searchMedicines }) {
   const [bill, setBill] = useState(null);
   const [editItems, setEditItems] = useState([]);
   const [search, setSearch] = useState("");
+  const [searchBillTerm, setSearchBillTerm] = useState("");
   const [results, setResults] = useState([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function refreshBillList() {
-    const res = await fetch(`${apiUrl}/api/billing/recent`, {
+  const refreshBillList = useCallback(async (query = "") => {
+    const q = query.trim() ? `?search=${encodeURIComponent(query.trim())}` : "";
+    const res = await fetch(`${apiUrl}/api/billing/recent${q}`, {
       headers: headers(token),
     });
     const data = await res.json();
     if (res.ok) setBills(data.sales || []);
-  }
+  }, [apiUrl, token]);
 
   useEffect(() => {
-    refreshBillList().catch(() => {});
-  }, [apiUrl, token]);
+    refreshBillList(searchBillTerm).catch(() => {});
+  }, [refreshBillList, searchBillTerm]);
 
   async function loadBill(saleId) {
     if (!saleId) {
@@ -1915,17 +2309,31 @@ export function EditBill({ apiUrl, token, searchMedicines }) {
       </div>
       {error && <div className="error-message">{error}</div>}
       {message && <div className="notice-card">{message}</div>}
-      <label>
-        Bill to edit
-        <select value={selectedId} onChange={(e) => loadBill(e.target.value)}>
-          <option value="">Select bill to edit</option>
-          {bills.map((b) => (
-            <option key={b.sale_id} value={b.sale_id}>
-              {b.invoice_number} — ₹{Number(b.grand_total).toFixed(2)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="billing-card" style={{ marginBottom: "16px" }}>
+        <h3 style={{ margin: "0 0 12px 0" }}>Select Bill by Patient Name or Invoice #</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", alignItems: "end" }}>
+          <label style={{ margin: 0 }}>
+            Search by Patient Name / Invoice
+            <input
+              type="search"
+              placeholder="Type patient name, mobile, or KM-..."
+              value={searchBillTerm}
+              onChange={(e) => setSearchBillTerm(e.target.value)}
+            />
+          </label>
+          <label style={{ margin: 0 }}>
+            Matched Bills ({bills.length})
+            <select value={selectedId} onChange={(e) => loadBill(e.target.value)}>
+              <option value="">Select bill to edit</option>
+              {bills.map((b) => (
+                <option key={b.sale_id} value={b.sale_id}>
+                  {b.patient_name || b.patientName || "Walk-in"} · {b.invoice_number || `#${b.sale_id}`} — ₹{Number(b.grand_total).toFixed(2)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
 
       {bill && (
         <div className="notice-card">

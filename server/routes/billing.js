@@ -43,7 +43,7 @@ router.get("/medicines", authenticateToken, async (req, res) => {
 
     let effectiveBranchId;
 
-    if (req.user.role === "SHOP_USER") {
+    if (["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(req.user.role)) {
       effectiveBranchId = branchId;
     } else if (req.user.role === "ADMIN") {
       effectiveBranchId = requestedBranchId;
@@ -161,6 +161,8 @@ function parsePatientNotes(notes) {
     mobile: pick(/Mobile:\s*([^|]+)/i),
     gender: pick(/Gender:\s*([^|]+)/i),
     doctorName: pick(/Doctor:\s*([^|]+)/i),
+    address: pick(/Address:\s*([^|]+)/i),
+    doctorRegNo: pick(/Dr\s*Reg\s*No:\s*([^|]+)/i),
   };
 }
 
@@ -353,15 +355,75 @@ router.get("/history", authenticateToken, requireShopUser, async (req, res) => {
 router.get("/recent", authenticateToken, requireShopUser, async (req, res) => {
   try {
     const branchId = resolveBranchId(req.user);
-    const [sales] = await pool.execute(
-      `SELECT sale_id, invoice_number, sale_type, grand_total, sale_datetime, payment_method
-       FROM sales
-       WHERE branch_id = ? AND status = 'FINALIZED' AND sale_type = 'BILLED'
-       ORDER BY sale_datetime DESC
-       LIMIT 50`,
-      [branchId]
-    );
-    res.json({ success: true, sales });
+    const search =
+      typeof req.query.search === "string" ? req.query.search.trim() : "";
+
+    let sql = `
+      SELECT
+        s.sale_id,
+        s.invoice_number,
+        s.sale_type,
+        s.grand_total,
+        s.sale_datetime,
+        s.payment_method,
+        s.notes,
+        p.full_name AS patient_full_name,
+        p.mobile AS patient_mobile_db
+      FROM sales s
+      LEFT JOIN patients p
+        ON p.patient_id = s.patient_id
+       AND p.branch_id = s.branch_id
+      WHERE s.branch_id = ?
+        AND s.status = 'FINALIZED'
+        AND s.sale_type = 'BILLED'
+    `;
+    const params = [branchId];
+
+    if (search.length >= 1) {
+      sql += ` AND (
+        COALESCE(s.notes, '') LIKE ?
+        OR COALESCE(s.invoice_number, '') LIKE ?
+        OR CAST(s.sale_id AS CHAR) LIKE ?
+        OR COALESCE(p.full_name, '') LIKE ?
+        OR COALESCE(p.mobile, '') LIKE ?
+      )`;
+      const term = `%${search}%`;
+      params.push(term, term, term, term, term);
+    }
+
+    sql += ` ORDER BY s.sale_datetime DESC LIMIT 100`;
+
+    const [sales] = await pool.execute(sql, params);
+
+    const enriched = sales.map((row) => {
+      const notes = row.notes || "";
+      const nameMatch = notes.match(/Patient:\s*([^|]+)/i);
+      const mobileMatch = notes.match(/Mobile:\s*([^|]+)/i);
+      const mobileFromNotes =
+        mobileMatch && mobileMatch[1].trim() !== "N/A"
+          ? mobileMatch[1].trim()
+          : null;
+
+      const patientName =
+        row.patient_full_name ||
+        (nameMatch ? nameMatch[1].trim() : "Walk-in Patient");
+
+      return {
+        sale_id: row.sale_id,
+        invoice_number: row.invoice_number,
+        sale_type: row.sale_type,
+        grand_total: row.grand_total,
+        sale_datetime: row.sale_datetime,
+        payment_method: row.payment_method,
+        notes: row.notes,
+        patient_name: patientName,
+        patientName: patientName,
+        patient_mobile: row.patient_mobile_db || mobileFromNotes,
+        patientMobile: row.patient_mobile_db || mobileFromNotes,
+      };
+    });
+
+    res.json({ success: true, sales: enriched });
   } catch (error) {
     console.error("Recent bills error:", error.message);
     res.status(500).json({ success: false, message: "Unable to load recent bills." });
@@ -903,7 +965,7 @@ router.post("/", authenticateToken, requireShopUser, async (req, res) => {
     } = req.body;
 
     const branchId =
-      req.user.role === "SHOP_USER"
+      ["SHOP_USER", "SHOP_MANAGER", "SHOP_WORKER"].includes(req.user.role)
         ? req.user.branchId
         : requestedBranchId;
 

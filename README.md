@@ -48,9 +48,9 @@ Full-stack prototype aligned with **Official SRS Draft 1.0**: shared **Medicine 
 | Username | Password | Role | Branch |
 |----------|----------|------|--------|
 | `testadmin` | `Admin@12345` | Admin | — |
-| `shopa` | `ShopA@12345` | Shop | BR001 Koramangala |
-| `shopb` | `ShopB@12345` | Shop | BR002 Indiranagar |
-| `shopc` | `ShopC@12345` | Shop | BR003 Whitefield |
+| `shopa` | `ShopA@12345` | Shop | BR001 Kiara Medicals A |
+| `shopb` | `ShopB@12345` | Shop | BR002 Kiara Medicals B |
+| `shopc` | `ShopC@12345` | Shop | BR003 Kiara Medicals C |
 
 ## Database migration (existing DB)
 
